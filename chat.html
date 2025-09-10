@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <title>Moje konverzace</title>
+  <style>
+    body { display: flex; font-family: Arial, sans-serif; height: 100vh; margin: 0; }
+    #conversations { width: 30%; border-right: 1px solid #ccc; overflow-y: auto; }
+    #chatWindow { flex: 1; display: flex; flex-direction: column; }
+    #messages { flex: 1; padding: 10px; overflow-y: auto; }
+    .conversation { padding: 10px; border-bottom: 1px solid #eee; cursor: pointer; }
+    .conversation:hover { background: #f0f0f0; }
+    .msg { margin: 5px 0; }
+    .agent { color: blue; }
+    .customer { color: green; }
+  </style>
+</head>
+<body>
+
+<div id="conversations"></div>
+
+<div id="chatWindow">
+  <div id="messages"></div>
+  <div style="padding:10px; border-top:1px solid #ccc;">
+    <input type="text" id="msgInput" placeholder="Napište zprávu..." style="width:80%;">
+    <button id="sendBtn">Odeslat</button>
+  </div>
+</div>
+
+<script type="module">
+  import platformClient from 'https://cdn.jsdelivr.net/npm/purecloud-platform-client-v2@latest/dist/web-platformClient-v2.browser.min.js';
+
+  const client = platformClient.ApiClient.instance;
+  const conversationsApi = new platformClient.ConversationsApi();
+
+  // ⚠️ sem dosaď svůj Access Token
+  client.setAccessToken("ACCESS_TOKEN");
+
+  const userId = "UZIVATEL_ID"; // ID přihlášeného uživatele
+  let selectedConvId = null;
+  let selectedParticipantId = null;
+
+  // 1️⃣ Načíst seznam konverzací
+  async function loadConversations() {
+    const resp = await conversationsApi.getConversations();
+    const convs = resp.entities.filter(c =>
+      c.participants.some(p => p.externalContactId === userId)
+    );
+
+    const container = document.getElementById("conversations");
+    container.innerHTML = "";
+    convs.forEach(c => {
+      const div = document.createElement("div");
+      div.className = "conversation";
+      div.textContent = c.id;
+      div.onclick = () => loadConversationDetails(c.id);
+      container.appendChild(div);
+    });
+  }
+
+  // 2️⃣ Načíst konkrétní konverzaci
+  async function loadConversationDetails(convId) {
+    selectedConvId = convId;
+    const conv = await conversationsApi.getConversation(convId);
+
+    // najdi participantId aktuálního uživatele
+    const myPart = conv.participants.find(p => p.externalContactId === userId);
+    if (myPart) selectedParticipantId = myPart.id;
+
+    const messagesDiv = document.getElementById("messages");
+    messagesDiv.innerHTML = "";
+
+    conv.participants.forEach(p => {
+      if (p.messages) {
+        p.messages.forEach(m => {
+          const msgDiv = document.createElement("div");
+          msgDiv.className = "msg " + (p.purpose === "customer" ? "customer" : "agent");
+          msgDiv.textContent = `[${p.purpose}] ${m.body}`;
+          messagesDiv.appendChild(msgDiv);
+        });
+      }
+    });
+  }
+
+  // 3️⃣ Poslat novou zprávu
+  document.getElementById("sendBtn").onclick = async () => {
+    const text = document.getElementById("msgInput").value;
+    if (!selectedConvId || !selectedParticipantId || !text) return;
+
+    await conversationsApi.postConversationsMessageCommunicationMessages(
+      selectedConvId,
+      selectedParticipantId,
+      { body: text }
+    );
+
+    document.getElementById("msgInput").value = "";
+    loadConversationDetails(selectedConvId);
+  };
+
+  // Inicializace
+  loadConversations();
+</script>
+
+</body>
+</html>
